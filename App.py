@@ -180,27 +180,39 @@ def traer_resultados(where: str, keyword: str | None, limite: int,
         offset += lote
 
     if not filas:
-        return pd.DataFrame(columns=CAMPOS)
+        df_vacio = pd.DataFrame(columns=CAMPOS)
+        df_vacio["url"] = None
+        return df_vacio
 
     df = pd.DataFrame(filas)
 
+    # Socrata omite del JSON los campos que vienen vacíos fila por fila (no
+    # los manda ni como null). Si NINGÚN proceso de este lote tiene valor en
+    # un campo (típico en los de adjudicación, cuando nada está adjudicado
+    # todavía), esa columna completa puede faltar en el DataFrame. Nos
+    # aseguramos de que todas las columnas esperadas existan siempre, aunque
+    # queden vacías, para que el resto de la app las pueda seleccionar sin
+    # que truene con un KeyError.
+    for col in CAMPOS:
+        if col not in df.columns:
+            df[col] = None
+
     # Tipado y limpieza
     for col in ["precio_base", "valor_total_adjudicacion"]:
-        if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors="coerce")
-    if "fecha_de_publicacion_del" in df.columns:
-        df["fecha_de_publicacion_del"] = pd.to_datetime(
-            df["fecha_de_publicacion_del"], errors="coerce"
-        )
-    if "fecha_adjudicacion" in df.columns:
-        # Solo tiene valor cuando el proceso ya fue adjudicado; queda NaT si no.
-        df["fecha_adjudicacion"] = pd.to_datetime(
-            df["fecha_adjudicacion"], errors="coerce"
-        )
-    if "urlproceso" in df.columns:
-        df["url"] = df["urlproceso"].apply(
-            lambda x: x.get("url") if isinstance(x, dict) else None
-        )
+        df[col] = pd.to_numeric(df[col], errors="coerce")
+
+    df["fecha_de_publicacion_del"] = pd.to_datetime(
+        df["fecha_de_publicacion_del"], errors="coerce"
+    )
+    # fecha_adjudicacion solo tiene valor cuando el proceso ya fue adjudicado;
+    # queda NaT (o la columna entera puede no haber existido) si no.
+    df["fecha_adjudicacion"] = pd.to_datetime(
+        df["fecha_adjudicacion"], errors="coerce"
+    )
+
+    df["url"] = df["urlproceso"].apply(
+        lambda x: x.get("url") if isinstance(x, dict) else None
+    )
 
     return df
 
